@@ -91,3 +91,10 @@ run it yourself at the end of the task.
 `NIMBLE_URL`, `NIMBLE_MODEL`, `NIMBLE_MAX_BYTES`, `NIMBLE_KEEP_ALIVE` (default `10m`),
 `NIMBLE_TIMEOUT` (default 30 s), `NIMBLE_LOCAL=0` (Jev only), `NIMBLE_HOOKS=0` (all off),
 `JEV_API_KEY`, `JEV_MODEL` (default `jev-latest`), `JEV_MAX_BYTES` (default 100000).
+
+## Usage log
+
+`nimble-ask` and `jgl` add one tab-separated line per call to `~/.nimble/usage.log`: time, tool,
+milliseconds, bytes (the input for `nimble-ask`, the output for `jgl`), answer or result count,
+working directory, question or arguments. `NIMBLE_USAGE_LOG=0` turns it off;
+`NIMBLE_USAGE_LOG_FILE` moves it.
