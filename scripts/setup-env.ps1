@@ -21,7 +21,9 @@
 param(
   [switch]$NonInteractive,
   # Which model ARTEMIS uses: 'gemini' (local Qwen as quota fallback) or 'qwen' (local only).
-  [ValidateSet('gemini', 'qwen')][string]$ArtemisModel
+  [ValidateSet('gemini', 'qwen')][string]$ArtemisModel,
+  # Decision model for the agents: 'nimble', 'laya', 'jev' (hosted only) or 'none'. Default: by hardware.
+  [ValidateSet('nimble', 'laya', 'jev', 'none')][string]$DecisionModel
 )
 
 $ErrorActionPreference = "Continue"
@@ -420,18 +422,43 @@ if ($haveArtemis -and $haveLocal) {
 # -------------------------------------------------------------
 # 8b. Local decision model for the agent hooks (Nimble or Laya)
 # -------------------------------------------------------------
-# Optional. The hooks (scripts/nimble.sh) ask it quick yes/no and pick-one questions and do
-# nothing without it. Nimble (Ollama) reads long logs but needs ~9 GB VRAM while loaded. Laya
-# (pip, ~1.3 GB) fits smaller machines but sees only the last ~512 tokens of a log.
-Write-Header "8b. Local Decision Model for Agent Hooks (Nimble / Laya)"
-$decision = $null
-if ($vramGb -ge 12) { $decision = "nimble" }
-elseif ($vramGb -ge 4 -or $ramGb -ge 16) { $decision = "laya" }
+# Optional. The hooks (scripts/nimble.sh) and the nimble skill ask a System One model quick yes/no
+# and pick-one questions instead of reading long text. Nimble (Ollama) reads long logs but needs
+# ~9 GB VRAM while loaded. Laya (pip, ~1.3 GB) fits smaller machines but sees only the last ~512
+# tokens. Jev (TypeSafe, hosted, paid per token) reads ~28K tokens; it is only used for text too
+# long for the local model, never by the hooks. All of it is optional.
+Write-Header "8b. Decision Model for Agents (Nimble / Laya local, Jev hosted)"
+$recommended = if ($vramGb -ge 12) { "nimble" } elseif ($vramGb -ge 4 -or $ramGb -ge 16) { "laya" } else { "jev" }
+$recText = @{ nimble = "Nimble + Jev"; laya = "Laya + Jev"; jev = "Jev only" }[$recommended]
+Write-Info "Recommended for this PC ($vramGb GB VRAM, $ramGb GB RAM): $recText (Jev optional)."
+$decision = $DecisionModel
+if (-not $decision -and -not $NonInteractive) {
+  Write-Host ""
+  Write-Host "  Which decision model should the agents use?" -ForegroundColor White
+  Write-Host "    n) Nimble - local, free, needs ~9 GB VRAM$(if ($recommended -eq 'nimble') { '  (recommended)' })"
+  Write-Host "    l) Laya   - local, free, small, short window$(if ($recommended -eq 'laya') { '  (recommended)' })"
+  Write-Host "    j) Jev only - hosted, paid per token, no local model$(if ($recommended -eq 'jev') { '  (recommended)' })"
+  Write-Host "    s) skip - no decision model; hooks stay off"
+  Write-Host "    Enter) $recText"
+  $answer = Read-Host "  -->"
+  $decision = switch ($answer) { 'n' { "nimble" } 'l' { "laya" } 'j' { "jev" } 's' { "none" } default { $recommended } }
+}
+if (-not $decision) { $decision = $recommended }
+if ($decision -eq "none") { $decision = $null }
+
+# The hooks read these per-user variables; clear what the other choices set.
+foreach ($v in "NIMBLE_URL", "NIMBLE_MODEL", "NIMBLE_MAX_BYTES", "NIMBLE_LOCAL") {
+  if ($decision) { [System.Environment]::SetEnvironmentVariable($v, $null, "User") }
+}
 
 if (-not $decision) {
-  Write-Info "Under 4 GB VRAM and 16 GB RAM: no local decision model. The hooks stay off; nothing breaks."
+  Write-Info "No decision model. The hooks stay off; nothing breaks. Re-run to choose one."
+} elseif ($decision -eq "jev") {
+  [System.Environment]::SetEnvironmentVariable("NIMBLE_LOCAL", "0", "User")
+  Write-Pass "Jev only: nimble-ask goes to Jev; the hooks stay off (they never pay for Jev)."
 } elseif ($decision -eq "nimble") {
-  Write-Pass "Your GPU fits Nimble ($vramGb GB VRAM; it needs ~9 GB while loaded)."
+  if ($vramGb -lt 12) { Write-Warn "Nimble needs ~9 GB VRAM while loaded; this PC has $vramGb GB. Expect CPU spill and slow answers." }
+  Write-Pass "Nimble ($vramGb GB VRAM; it needs ~9 GB while loaded)."
   if ($localModel -and $vramGb -lt 18) {
     Write-Info "Nimble and $localModel do not both fit in VRAM; Ollama swaps them, so the first hook after an ARTEMIS run is slower."
   }
@@ -498,22 +525,72 @@ if (`$Background) {
   Write-Info "Start it: powershell -ExecutionPolicy Bypass -File `"$start`" -Background"
 }
 
-# The `nimble` skill lets an agent in ANY project ask the model a yes/no or pick-one question
-# about a long log instead of reading it. Installed per user, only when asked.
+# Jev (TypeSafe, hosted): optional, paid per input token. nimble-ask sends text there only when it
+# is too long for the local model (or there is none); the hooks never do. The key stays in a
+# per-user file, never in the repo.
 if ($decision) {
-  $globalSkill = Join-Path $env:USERPROFILE ".claude\skills\nimble\SKILL.md"
-  $globalBin = Join-Path $env:USERPROFILE ".claude\nimble"
-  if (Test-Path $globalSkill) {
-    Write-Pass "The nimble skill is installed globally ($globalSkill)."
-  } elseif (Prompt-Fix "Install the nimble skill globally (~\.claude\skills\nimble, for every project)?") {
-    New-Item -ItemType Directory -Force -Path (Split-Path $globalSkill), $globalBin | Out-Null
-    Copy-Item (Join-Path $repoRoot "tools\nimble-skill\SKILL.md") $globalSkill -Force
-    Copy-Item (Join-Path $repoRoot "tools\nimble-skill\nimble-ask") $globalBin -Force
-    Copy-Item (Join-Path $repoRoot "scripts\nimble.sh") $globalBin -Force
-    Write-Pass "Installed. Restart your agent; check with: echo hi | bash ~/.claude/nimble/nimble-ask yesno `"Is this a greeting?`""
+  $jevKeyFile = Join-Path $env:USERPROFILE ".config\typesafe\api_key"
+  if ($env:JEV_API_KEY -or (Test-Path $jevKeyFile)) {
+    Write-Pass "Jev: a TypeSafe API key is set. Spend is logged in ~\.config\typesafe\usage.log."
+  } elseif ($NonInteractive) {
+    Write-Info "Jev (optional): no TypeSafe API key. Add one later in $jevKeyFile."
+  } else {
+    $secure = Read-Host "  --> Paste a TypeSafe API key for Jev (Enter to skip; add it later)" -AsSecureString
+    $key = [System.Net.NetworkCredential]::new("", $secure).Password.Trim()
+    if ($key) {
+      New-Item -ItemType Directory -Force -Path (Split-Path $jevKeyFile) | Out-Null
+      Set-Content -Path $jevKeyFile -Value $key -NoNewline -Encoding ascii
+      & icacls $jevKeyFile /inheritance:r /grant:r "$($env:USERNAME):(R,W)" *> $null
+      Write-Pass "Saved the key to $jevKeyFile (readable by you only)."
+    } else {
+      Write-Info "Jev skipped. Later: put the key in $jevKeyFile, or set JEV_API_KEY."
+    }
+  }
+  if (Get-Command claude -ErrorAction SilentlyContinue) {
+    if (-not (& claude plugin list 2>$null | Select-String -Quiet "typesafe")) {
+      if (Prompt-Fix "Install the TypeSafe skill for Claude Code (how to build with Jev)?") {
+        & claude plugin marketplace add typesafe-ai/skills
+        & claude plugin install typesafe@typesafe-ai
+      }
+    } else { Write-Pass "TypeSafe skill is installed for Claude Code." }
+  }
+  Write-Info "Gemini/Antigravity: npx skills add typesafe-ai/skills --skill typesafe-ai (pick your agent)."
+}
+
+# jgl = jg (jevgrep) with the local model judging: finds code by meaning, nothing leaves the PC.
+if ($decision -eq "nimble" -or $decision -eq "laya") {
+  $haveJg = [bool](Get-Command jg -ErrorAction SilentlyContinue)
+  $haveRg = [bool](Get-Command rg -ErrorAction SilentlyContinue)
+  if ($haveJg -and $haveRg) {
+    Write-Pass "jg and ripgrep are installed; ~/.nimble/jgl searches code by meaning with $decision."
+  } elseif (Prompt-Fix "Install jg (npm) and ripgrep (winget) for search by meaning?") {
+    if (-not $haveJg) { & npm install -g @remotehost/jg }
+    if (-not $haveRg) { & winget install --id BurntSushi.ripgrep.MSVC -e --silent --accept-package-agreements --accept-source-agreements }
+    Write-Info "Open a new terminal so PATH picks up rg."
+  } else {
+    Write-Info "Later: npm install -g @remotehost/jg; winget install BurntSushi.ripgrep.MSVC"
+  }
+}
+
+# The `nimble` skill lets an agent in ANY project (Claude Code and Gemini/Antigravity) ask the
+# model instead of reading long text, find code with jgl, and unload the model when done.
+# Installed per user, only when asked.
+if ($decision) {
+  $bash = Get-Command bash -ErrorAction SilentlyContinue
+  $installed = (Test-Path (Join-Path $env:USERPROFILE ".nimble\nimble-ask")) -and
+    (Test-Path (Join-Path $env:USERPROFILE ".claude\skills\nimble\SKILL.md")) -and
+    (Test-Path (Join-Path $env:USERPROFILE ".gemini\skills\nimble\SKILL.md"))
+  if ($installed) {
+    Write-Pass "The nimble skill is installed globally (~\.nimble, Claude and Gemini skills). Re-run tools/nimble-skill/install-global.sh to update."
+  } elseif (-not $bash) {
+    Write-Warn "bash (Git Bash) not found; install Git for Windows to use the nimble skill."
+  } elseif (Prompt-Fix "Install the nimble skill globally for Claude Code and Gemini (every project)?") {
+    & bash (Join-Path $repoRoot "tools/nimble-skill/install-global.sh")
+    Write-Pass "Restart your agent. Check: echo hi | bash ~/.nimble/nimble-ask yesno `"Is this a greeting?`""
   } else {
     Write-Info "Skipped. The repo hooks still use the model; only other projects miss the skill."
   }
+  Write-Info "Free the GPU after use: bash ~/.nimble/nimble-off nimble (Claude Code does it on session end)."
 }
 
 # -------------------------------------------------------------

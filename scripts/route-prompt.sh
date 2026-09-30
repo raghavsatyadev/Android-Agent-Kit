@@ -11,6 +11,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "$here/nimble.sh" ] || exit 0
 # shellcheck source=nimble.sh
 . "$here/nimble.sh"
+NIMBLE_ALLOW_JEV=0   # hooks stay local and free; Jev is for nimble-ask only
 nimble_enabled || exit 0
 
 input=""

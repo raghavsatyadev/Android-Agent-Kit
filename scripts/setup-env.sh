@@ -12,6 +12,7 @@
 #   7. ARTEMIS clone, API key and MCP registration
 #   8. ARTEMIS model: Gemini (local Qwen fallback) or local Qwen only, sized to your GPU
 #      Non-interactive choice: ARTEMIS_MODEL=gemini|qwen bash scripts/setup-env.sh
+#      Decision model: DECISION_MODEL=nimble|laya|jev|none (default: asks, recommending by hardware)
 #   9. ktfmt (fetched by scripts/ci-local.sh)
 #  10. Links .agents/skills/ into .claude/skills/ so Claude Code finds the skills
 # ==============================================================================
@@ -352,22 +353,47 @@ if [[ -d "$ARTEMIS_HOME/mcp_server" ]] && (( HAVE_LOCAL )); then
 fi
 
 # -------------------------------------------------------------
-# 8b. Local decision model for the agent hooks (Nimble or Laya)
+# 8b. Decision model for agents: Nimble / Laya (local) and Jev (hosted, optional)
 # -------------------------------------------------------------
-# Optional. The hooks (scripts/nimble.sh) ask it quick yes/no and pick-one questions and do
-# nothing without it. Nimble (Ollama) reads long logs but needs ~9 GB of GPU memory while loaded.
-# Laya (pip, ~1.3 GB) fits smaller machines but sees only the last ~512 tokens of a log.
-header "8b. Local Decision Model for Agent Hooks (Nimble / Laya)"
+# Optional. The hooks (scripts/nimble.sh) and the nimble skill ask a System One model quick yes/no
+# and pick-one questions instead of reading long text. Nimble (Ollama) reads long logs but needs
+# ~9 GB of GPU memory while loaded. Laya (pip, ~1.3 GB) fits smaller machines but sees only the
+# last ~512 tokens. Jev (TypeSafe, hosted, paid per token) reads ~28K tokens; it is only used for
+# text too long for the local model, never by the hooks.
+header "8b. Decision Model for Agents (Nimble / Laya local, Jev hosted)"
 if [[ "$OS_TYPE" == Darwin* ]]; then RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
 else RAM_GB=$(( $(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1048576 )); fi
-DECISION=""
-if (( VRAM_GB >= 12 )); then DECISION=nimble
-elif (( VRAM_GB >= 4 || RAM_GB >= 16 )); then DECISION=laya; fi
+if (( VRAM_GB >= 12 )); then RECOMMENDED=nimble; REC_TEXT="Nimble + Jev"
+elif (( VRAM_GB >= 4 || RAM_GB >= 16 )); then RECOMMENDED=laya; REC_TEXT="Laya + Jev"
+else RECOMMENDED=jev; REC_TEXT="Jev only"; fi
+info "Recommended for this machine (~${VRAM_GB} GB GPU, ${RAM_GB} GB RAM): $REC_TEXT (Jev optional)."
+DECISION="${DECISION_MODEL:-}"
+if [[ -z "$DECISION" ]]; then
+  echo ""
+  echo "  Which decision model should the agents use?"
+  echo "    n) Nimble   - local, free, needs ~9 GB GPU memory"
+  echo "    l) Laya     - local, free, small, short window"
+  echo "    j) Jev only - hosted, paid per token, no local model"
+  echo "    s) skip     - no decision model; hooks stay off"
+  echo "    Enter) $REC_TEXT"
+  read -r -p "  --> " answer
+  case "$answer" in n|N) DECISION=nimble ;; l|L) DECISION=laya ;; j|J) DECISION=jev ;; s|S) DECISION=none ;; *) DECISION=$RECOMMENDED ;; esac
+fi
+[[ "$DECISION" == none ]] && DECISION=""
+
+# The hooks read NIMBLE_* from the shell profile; drop what an earlier choice wrote there.
+if [[ -n "$DECISION" && -f "$SHELL_PROFILE" ]] && grep -q "^# Agent hooks: decision model" "$SHELL_PROFILE"; then
+  awk '/^# Agent hooks: decision model/ { skip = 2 } skip { skip--; next } 1' "$SHELL_PROFILE" > "$SHELL_PROFILE.tmp"     && mv "$SHELL_PROFILE.tmp" "$SHELL_PROFILE"
+fi
 
 if [[ -z "$DECISION" ]]; then
-  info "Under 4 GB GPU memory and 16 GB RAM: no local decision model. The hooks stay off; nothing breaks."
+  info "No decision model. The hooks stay off; nothing breaks. Re-run to choose one."
+elif [[ "$DECISION" == jev ]]; then
+  printf '# Agent hooks: decision model = Jev only\nexport NIMBLE_LOCAL=0\n' >> "$SHELL_PROFILE"
+  pass "Jev only: nimble-ask goes to Jev; the hooks stay off (they never pay for Jev)."
 elif [[ "$DECISION" == nimble ]]; then
-  pass "Your hardware fits Nimble (~${VRAM_GB} GB usable; it needs ~9 GB while loaded)."
+  (( VRAM_GB < 12 )) && warn "Nimble needs ~9 GB of GPU memory while loaded; this machine has ~${VRAM_GB} GB. Expect slow answers."
+  pass "Nimble (~${VRAM_GB} GB usable; it needs ~9 GB while loaded)."
   if [[ -n "$LOCAL_MODEL" ]] && (( VRAM_GB < 18 )); then
     info "Nimble and $LOCAL_MODEL do not both fit; Ollama swaps them, so the first hook after an ARTEMIS run is slower."
   fi
@@ -418,27 +444,61 @@ EOF
     pass "Wrote $LAYA_ENV/start-laya.sh"
   fi
   # Point the hooks at Laya: same /v1/systemone API, but a 512-token window.
-  if ! grep -q "NIMBLE_URL" "$SHELL_PROFILE" 2>/dev/null; then
-    printf '\n# Agent hooks: local decision model = Laya\nexport NIMBLE_URL=http://127.0.0.1:8000 NIMBLE_MODEL=laya NIMBLE_MAX_BYTES=1800\n' >> "$SHELL_PROFILE"
-  fi
+  printf '# Agent hooks: decision model = Laya\nexport NIMBLE_URL=http://127.0.0.1:8000 NIMBLE_MODEL=laya NIMBLE_MAX_BYTES=1800\n' >> "$SHELL_PROFILE"
   info "Hooks now use Laya (NIMBLE_URL, NIMBLE_MODEL, NIMBLE_MAX_BYTES in $SHELL_PROFILE; restart your agent)."
   info "Start it: $LAYA_ENV/start-laya.sh"
 fi
 
-# The `nimble` skill lets an agent in ANY project ask the model a yes/no or pick-one question
-# about a long log instead of reading it. Installed per user, only when asked.
+# Jev (TypeSafe, hosted): optional, paid per input token. nimble-ask sends text there only when it
+# is too long for the local model (or there is none); the hooks never do. The key stays in a
+# per-user file, never in the repo.
 if [[ -n "$DECISION" ]]; then
-  if [[ -f "$HOME/.claude/skills/nimble/SKILL.md" ]]; then
-    pass "The nimble skill is installed globally (~/.claude/skills/nimble)."
-  elif prompt_fix "Install the nimble skill globally (~/.claude/skills/nimble, for every project)?"; then
-    mkdir -p "$HOME/.claude/skills/nimble" "$HOME/.claude/nimble"
-    cp "$REPO_ROOT/tools/nimble-skill/SKILL.md" "$HOME/.claude/skills/nimble/SKILL.md"
-    cp "$REPO_ROOT/tools/nimble-skill/nimble-ask" "$REPO_ROOT/scripts/nimble.sh" "$HOME/.claude/nimble/"
-    chmod +x "$HOME/.claude/nimble/nimble-ask"
-    pass "Installed. Restart your agent; check with: echo hi | ~/.claude/nimble/nimble-ask yesno \"Is this a greeting?\""
+  JEV_KEY_FILE="$HOME/.config/typesafe/api_key"
+  if [[ -n "${JEV_API_KEY:-}" || -s "$JEV_KEY_FILE" ]]; then
+    pass "Jev: a TypeSafe API key is set. Spend is logged in ~/.config/typesafe/usage.log."
+  else
+    read -r -s -p "  --> Paste a TypeSafe API key for Jev (Enter to skip; add it later): " key; echo ""
+    if [[ -n "$key" ]]; then
+      mkdir -p "$(dirname "$JEV_KEY_FILE")" && (umask 077; printf '%s' "$key" > "$JEV_KEY_FILE")
+      pass "Saved the key to $JEV_KEY_FILE (readable by you only)."
+    else
+      info "Jev skipped. Later: put the key in $JEV_KEY_FILE, or export JEV_API_KEY."
+    fi
+  fi
+  if command -v claude &>/dev/null; then
+    if claude plugin list 2>/dev/null | grep -q typesafe; then pass "TypeSafe skill is installed for Claude Code."
+    elif prompt_fix "Install the TypeSafe skill for Claude Code (how to build with Jev)?"; then
+      claude plugin marketplace add typesafe-ai/skills && claude plugin install typesafe@typesafe-ai
+    fi
+  fi
+  info "Gemini/Antigravity: npx skills add typesafe-ai/skills --skill typesafe-ai (pick your agent)."
+fi
+
+# jgl = jg (jevgrep) with the local model judging: finds code by meaning, nothing leaves the PC.
+if [[ "$DECISION" == nimble || "$DECISION" == laya ]]; then
+  if command -v jg &>/dev/null && command -v rg &>/dev/null; then
+    pass "jg and ripgrep are installed; ~/.nimble/jgl searches code by meaning with $DECISION."
+  elif prompt_fix "Install jg (npm) for search by meaning? (ripgrep: install it with your package manager)"; then
+    npm install -g @remotehost/jg
+    command -v rg &>/dev/null || info "Also install ripgrep: brew install ripgrep / apt install ripgrep"
+  else
+    info "Later: npm install -g @remotehost/jg, plus ripgrep."
+  fi
+fi
+
+# The `nimble` skill lets an agent in ANY project (Claude Code and Gemini/Antigravity) ask the
+# model instead of reading long text, find code with jgl, and unload the model when done.
+# Installed per user, only when asked.
+if [[ -n "$DECISION" ]]; then
+  if [[ -x "$HOME/.nimble/nimble-ask" && -f "$HOME/.claude/skills/nimble/SKILL.md" && -f "$HOME/.gemini/skills/nimble/SKILL.md" ]]; then
+    pass "The nimble skill is installed globally (~/.nimble, Claude and Gemini skills). Re-run tools/nimble-skill/install-global.sh to update."
+  elif prompt_fix "Install the nimble skill globally for Claude Code and Gemini (every project)?"; then
+    bash "$REPO_ROOT/tools/nimble-skill/install-global.sh"
+    pass "Restart your agent. Check: echo hi | ~/.nimble/nimble-ask yesno \"Is this a greeting?\""
   else
     info "Skipped. The repo hooks still use the model; only other projects miss the skill."
   fi
+  info "Free the GPU after use: ~/.nimble/nimble-off nimble (Claude Code does it on session end)."
 fi
 
 # -------------------------------------------------------------

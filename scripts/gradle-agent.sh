@@ -27,6 +27,7 @@ grep -E '^e: file://' "$log" | awk '!seen[$0]++' | head -n 40
 if [ -f "$root/scripts/nimble.sh" ]; then
   # shellcheck source=nimble.sh
   . "$root/scripts/nimble.sh"
+  NIMBLE_ALLOW_JEV=0   # hooks stay local and free
   q='{"class":{"type":"choice","instructions":"Classify why this Gradle build failed.","criteria":{"kotlin_compile":"Kotlin compile error (e: file://)","ktfmt":"ktfmt or spotless format check failed","dependency":"dependency resolution or download failure","jdk_jlink":"JDK, toolchain or jlink failure","submodule_native":"git submodule missing or native CMake build failure","gradle_oom":"Gradle or Kotlin daemon out of memory","other":"none of the above"}}}'
   if resp=$(tail -n 200 "$log" | nimble_ask 2 "$q")      && c=$(nimble_get "$resp" class choice) && p=$(nimble_get "$resp" class p)      && [ "$c" != "other" ] && nimble_ge "$p" 0.6; then
     case "$c" in
