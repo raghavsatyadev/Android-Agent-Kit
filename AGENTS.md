@@ -15,8 +15,10 @@ base branch `{{BASE_BRANCH}}`. Values also live in `agent-kit.env`.
 - When done and checked, stop. Report in five lines or fewer, in ASD-STE100 Simplified Technical English.
 - Claude Code: medium effort for scoped edits; high for native or architecture work. A second
   agent only for a review the user asked for.
-- Long log or file and you need only a verdict: ask `~/.nimble/nimble-ask` first (skill `nimble`,
-  if installed). Unknown keyword: `~/.nimble/jgl`. When done, `~/.nimble/nimble-off nimble`.
+- Decision model (skill `nimble`): start it first, `bash ~/.nimble/nimble-on` (the SessionStart
+  hook does this in Claude Code). Then rely on it: `~/.nimble/jgl` first for any search where
+  you do not know the exact name; `~/.nimble/nimble-ask` first for a long log or file when you
+  need only a verdict. `rg` for exact names. When done, `~/.nimble/nimble-off nimble`.
 
 ## Rules — `.agents/rules/`
 
