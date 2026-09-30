@@ -3,7 +3,7 @@
 #
 # Mirrors .github/workflows/ci.yml:
 #   job 1  ktfmt-check  — ktfmt --google-style --dry-run --set-exit-if-changed
-#   job 2  build-app    — ./gradlew :${APP_MODULE#:}:compileDebugKotlin
+#   job 2  build-app    — ./gradlew :${APP_MODULE#:}:compile${APP_VARIANT}Kotlin
 #
 #   scripts/ci-local.sh                  check working tree + commits vs the base branch
 #   scripts/ci-local.sh --fix            reformat offending files instead of failing
@@ -178,7 +178,7 @@ fi
 
 if [ "$RUN_COMPILE" = "1" ]; then
   head2 "[2/2] Build & verify compilation"
-  say "  ./gradlew :${APP_MODULE#:}:compileDebugKotlin"
+  say "  ./gradlew :${APP_MODULE#:}:compile${APP_VARIANT}Kotlin"
 
   GRADLE="./gradlew"
   # On Windows the POSIX wrapper is not executable; use the batch one. It must be
@@ -187,7 +187,7 @@ if [ "$RUN_COMPILE" = "1" ]; then
     MINGW*|MSYS*|CYGWIN*) GRADLE="./gradlew.bat" ;;
   esac
 
-  if out=$("$GRADLE" :${APP_MODULE#:}:compileDebugKotlin --console=plain 2>&1); then
+  if out=$("$GRADLE" ":${APP_MODULE#:}:compile${APP_VARIANT}Kotlin" --console=plain 2>&1); then
     say "  ${GREEN}PASS${RST}  compiles"
   else
     say "  ${RED}FAIL${RST}  compilation failed:"

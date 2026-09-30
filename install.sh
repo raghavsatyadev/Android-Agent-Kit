@@ -19,6 +19,11 @@ copied=0; skipped=0
 while IFS= read -r f; do
   f="${f#./}"
   dest="$TARGET/$f"
+  if [ "$f" = AGENTS.md ] && [ -e "$dest" ]; then
+    # The repo already has agent docs (even with --force): keep them, put the kit index beside.
+    echo "copy  AGENTS.md -> AGENTS.kit.md (AGENTS.md exists; merge it by hand)"
+    copied=$((copied + 1)); [ "$DRY" = 1 ] || cp -p "$KIT/$f" "$TARGET/AGENTS.kit.md"; continue
+  fi
   if [ -e "$dest" ] && [ "$FORCE" = 0 ]; then
     echo "skip  $f (exists)"; skipped=$((skipped + 1)); continue
   fi
@@ -35,9 +40,14 @@ done < <(cd "$KIT" && find . -type f \
 
 echo; echo "Copied $copied, skipped $skipped$([ "$DRY" = 1 ] && echo ' (dry run)')."
 echo
+if [ -d "$TARGET/.agent" ]; then
+  echo "Found an old .agent/ folder. The kit uses .agents/: move project-only rules into"
+  echo ".agents/rules/ and delete the ones the kit replaces, so agents do not read both."
+  echo
+fi
 echo "Fill these placeholders:"
-echo "  agent-kit.env : APP_MODULE, APPLICATION_ID, BASE_BRANCH (KTFMT_VERSION, NDK_VERSION optional)"
-echo "  AGENTS.md     : {{APP_NAME}} {{ONE_LINE_DESCRIPTION}} {{MODULES}} {{APP_MODULE}} {{APPLICATION_ID}} {{BASE_BRANCH}}"
+echo "  agent-kit.env : APP_MODULE, APP_VARIANT, APPLICATION_ID, BASE_BRANCH (KTFMT_VERSION, NDK_VERSION optional)"
+echo "  AGENTS.md     : {{APP_NAME}} {{ONE_LINE_DESCRIPTION}} {{MODULES}} {{APP_MODULE}} {{APP_VARIANT}} {{APPLICATION_ID}} {{BASE_BRANCH}}"
 echo "  .agents/skills/android-device-test/flows.md : your app's flows"
 echo "  rules/skills  : <BASE_BRANCH>, <app>, <applicationId> markers"
 echo

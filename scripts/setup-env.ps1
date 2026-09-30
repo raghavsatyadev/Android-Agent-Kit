@@ -59,7 +59,7 @@ function Prompt-Fix ($promptText) {
 }
 
 $repoRoot = (Resolve-Path "$PSScriptRoot\..").Path
-$kit = @{ APP_MODULE = ":app"; NDK_VERSION = "" }
+$kit = @{ APP_MODULE = ":app"; APP_VARIANT = "Debug"; NDK_VERSION = "" }
 $kitFile = Join-Path $repoRoot "agent-kit.env"
 if (Test-Path $kitFile) { Get-Content $kitFile | ForEach-Object { if ($_ -match '^\s*([A-Z_]+)=(.*)$') { $kit[$Matches[1]] = $Matches[2].Trim('"') } } }
 Set-Location $repoRoot
@@ -298,6 +298,11 @@ if (-not $ghCmd) {
 # -------------------------------------------------------------
 Write-Header "7. ARTEMIS Mobile Testing"
 $artemisHome = if ($env:ARTEMIS_HOME) { $env:ARTEMIS_HOME } else { Join-Path (Split-Path $repoRoot -Parent) "artemis" }
+# Not beside the repo: use the clone the ARTEMIS MCP server is already registered from.
+if (-not $env:ARTEMIS_HOME -and -not (Test-Path (Join-Path $artemisHome "mcp_server")) -and (Get-Command claude -ErrorAction SilentlyContinue)) {
+  $mcpPath = (& claude mcp get artemis 2>$null | Select-String -Pattern '^\s*PYTHONPATH=(.+)$' | Select-Object -First 1)
+  if ($mcpPath) { $artemisHome = $mcpPath.Matches[0].Groups[1].Value.Trim() }
+}
 $artemisEnv = Join-Path $artemisHome ".env"
 if (-not (Test-Path (Join-Path $artemisHome "mcp_server"))) {
   Write-Fail "ARTEMIS not found at $artemisHome (set ARTEMIS_HOME if it lives elsewhere)."
@@ -635,8 +640,8 @@ Write-Header "Setup Doctor Summary"
 if ($issuesFound -eq 0) {
   Write-Host "  ALL ESSENTIAL PREREQUISITES ARE MET! You are ready to build." -ForegroundColor Green
   Write-Host "  Next steps:" -ForegroundColor White
-  Write-Host "    1. Build app:    .\gradlew.bat :$($kit.APP_MODULE.TrimStart(':')):assembleDebug --no-daemon --console=plain" -ForegroundColor Cyan
-  Write-Host "    2. Run tests:    .\gradlew.bat :$($kit.APP_MODULE.TrimStart(':')):testDebugUnitTest --no-daemon --console=plain" -ForegroundColor Cyan
+  Write-Host "    1. Build app:    .\gradlew.bat :$($kit.APP_MODULE.TrimStart(':')):assemble$($kit.APP_VARIANT) --no-daemon --console=plain" -ForegroundColor Cyan
+  Write-Host "    2. Run tests:    .\gradlew.bat :$($kit.APP_MODULE.TrimStart(':')):test$($kit.APP_VARIANT)UnitTest --no-daemon --console=plain" -ForegroundColor Cyan
   Write-Host "    3. Format code:  bash scripts/ci-local.sh --fix" -ForegroundColor Cyan
 } else {
   Write-Host "  Found $issuesFound issue(s) that need attention. Please review the warnings above." -ForegroundColor Yellow

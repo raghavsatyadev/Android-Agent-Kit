@@ -35,6 +35,7 @@ One file at the repo root, read by every script and hook.
 
 ```
 APP_MODULE=:app        # Gradle module of the app
+APP_VARIANT=Debug      # build variant; DevDebug etc. when the app has flavors
 APPLICATION_ID=        # used by the device-test scripts
 BASE_BRANCH=development
 KTFMT_VERSION=         # blank = latest release

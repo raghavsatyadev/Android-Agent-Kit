@@ -238,7 +238,14 @@ fi
 # 7. ARTEMIS (on-device testing via MCP)
 # -------------------------------------------------------------
 header "7. ARTEMIS Mobile Testing"
-ARTEMIS_HOME="${ARTEMIS_HOME:-$(dirname "$REPO_ROOT")/artemis}"
+if [[ -z "${ARTEMIS_HOME:-}" ]]; then
+  ARTEMIS_HOME="$(dirname "$REPO_ROOT")/artemis"
+  # Not beside the repo: use the clone the ARTEMIS MCP server is already registered from.
+  if [[ ! -d "$ARTEMIS_HOME/mcp_server" ]] && command -v claude >/dev/null 2>&1; then
+    mcp_path=$(claude mcp get artemis 2>/dev/null | sed -n 's/^[[:space:]]*PYTHONPATH=//p' | head -1 | tr -d '')
+    [[ -n "$mcp_path" ]] && ARTEMIS_HOME="$mcp_path"
+  fi
+fi
 ARTEMIS_ENV="$ARTEMIS_HOME/.env"
 if [[ ! -d "$ARTEMIS_HOME/mcp_server" ]]; then
   fail "ARTEMIS not found at $ARTEMIS_HOME (set ARTEMIS_HOME if it lives elsewhere)."
@@ -547,8 +554,8 @@ header "Doctor Summary"
 if [[ $issues_found -eq 0 ]]; then
   echo -e "${GREEN}${BOLD}ALL ESSENTIAL PREREQUISITES MET! Ready to build.${NC}"
   echo -e "Commands to get started:"
-  echo -e "  Build:   ${CYAN}./gradlew :${APP_MODULE#:}:assembleDebug${NC}"
-  echo -e "  Test:    ${CYAN}./gradlew :${APP_MODULE#:}:testDebugUnitTest${NC}"
+  echo -e "  Build:   ${CYAN}./gradlew :${APP_MODULE#:}:assemble${APP_VARIANT}${NC}"
+  echo -e "  Test:    ${CYAN}./gradlew :${APP_MODULE#:}:test${APP_VARIANT}UnitTest${NC}"
   echo -e "  Format:  ${CYAN}bash scripts/ci-local.sh --fix${NC}"
 else
   echo -e "${YELLOW}${BOLD}Found $issues_found item(s) that need attention. See above logs.${NC}"

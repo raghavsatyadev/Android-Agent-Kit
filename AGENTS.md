@@ -38,10 +38,10 @@ New machine: run the setup doctor first — `scripts/setup-env.ps1` (Windows) or
 `scripts/setup-env.sh` (macOS/Linux).
 
 ```bash
-scripts/ci-local.sh                      # ktfmt + compileDebugKotlin — run before pushing
+scripts/ci-local.sh                      # ktfmt + compile<APP_VARIANT>Kotlin — run before pushing
 scripts/gradle-agent.sh <tasks>          # agents: Gradle with errors only; full log in tmp/
-./gradlew {{APP_MODULE}}:assembleDebug   # build
-./gradlew {{APP_MODULE}}:testDebugUnitTest
+./gradlew {{APP_MODULE}}:assemble{{APP_VARIANT}}   # build
+./gradlew {{APP_MODULE}}:test{{APP_VARIANT}}UnitTest
 git config core.hooksPath .githooks      # once: pre-commit runs ktfmt, pre-push runs ci-local.sh
 ```
 
