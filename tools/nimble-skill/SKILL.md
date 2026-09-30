@@ -1,12 +1,25 @@
 ---
 name: nimble
-description: Ask a System One decision model (local Nimble or Laya; hosted Jev only for very long text) a yes/no or pick-one question about a long log, file or command output instead of reading it into context, and find code by meaning with jgl. Use before reading a big build log, test output, logcat dump or generated file when you only need a verdict, and when a keyword search would miss what you are looking for. Unload the model when the work is done.
+description: Start the local decision model first in every session (nimble-on), then rely on it. Ask a System One decision model (local Nimble or Laya; hosted Jev only for very long text) a yes/no or pick-one question about a long log, file or command output instead of reading it into context, and find code by meaning with jgl. Use before reading a big build log, test output, logcat dump or generated file when you only need a verdict, and when a keyword search would miss what you are looking for. Unload the model when the work is done.
 ---
 
 # Nimble: cheap verdicts instead of long reads
 
 Commands live in `~/.nimble/` (Windows: `%USERPROFILE%\.nimble\`); run them with bash. They work
 the same for Claude Code and Gemini/Antigravity agents.
+
+## Start first, then rely on it
+
+1. **Before any other work in a session**, start the tools:
+   `bash ~/.nimble/nimble-on`. It returns at once and loads the model and the jgl proxy in the
+   background. Claude Code repos with the SessionStart hook do this for you; run it anyway if
+   `curl -s 127.0.0.1:11434/api/ps` does not list the model. Gemini/Antigravity: always run it.
+2. **Then use these tools before the usual ones:**
+   - Looking for code and you do not know the exact name → `jgl` first, then `rg` to confirm.
+   - Build log, test output, logcat or a file over ~200 lines, and you need a verdict →
+     `nimble-ask` first. Read the text only when it answers below 0.9 or exits 2.
+   - Exact identifier or error string → `rg` directly (faster than jgl, same result).
+3. At the end of the task: `~/.nimble/nimble-off nimble`.
 
 | Backend | Where | Cost | Reads |
 | --- | --- | --- | --- |
