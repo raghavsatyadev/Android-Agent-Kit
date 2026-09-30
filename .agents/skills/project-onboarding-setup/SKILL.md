@@ -1,6 +1,6 @@
 ---
 name: project-onboarding-setup
-description: Developer environment setup (toolchain, ARTEMIS, GitHub CLI, local LLM fallback, Nimble/Laya decision model) and the end-to-end GitHub bug → fix → device verification → PR workflow.
+description: Developer environment setup (toolchain, ARTEMIS, GitHub CLI, local LLM fallback, Nimble/Laya/Jev decision model) and the end-to-end GitHub bug → fix → device verification → PR workflow.
 version: 3.1.0
 ---
 
@@ -28,7 +28,7 @@ bash scripts/setup-env.sh                                         # macOS / Linu
 | Python / uv | Python 3.10+, `uv` |
 | ARTEMIS | cloned, MCP registered with your agent, Gemini key in its `.env` |
 | Ollama *(optional)* | local Qwen3-VL for ARTEMIS — quota fallback, or the only model |
-| Decision model *(optional)* | Nimble (Ollama ≥ 0.35.0) or Laya (pip), chosen by hardware — for the agent hooks |
+| Decision model *(optional)* | Nimble (Ollama ≥ 0.35.0) or Laya (pip), plus optional hosted Jev — recommended by hardware, user's choice |
 | Device | Android phone with USB debugging authorised (`adb devices -l` shows `device`) |
 
 ktfmt is **not** a prerequisite — `scripts/ci-local.sh` downloads the version CI uses.
@@ -96,12 +96,17 @@ Qwen-only mode, verified end to end on a Galaxy S25 Ultra:
   fail and ARTEMIS **silently** falls back to hardcoded Gemini — the script sets it to `ollama`.
   Check `stdout.log` for `Failed to get operator LLM` if a local run seems to use Gemini.
 
-## Part 1b — Local decision model for the agent hooks (Nimble or Laya)
+## Part 1b — Decision model for agents: Nimble / Laya (local) and Jev (hosted)
 
-The hooks in `scripts/` (`gradle-agent.sh` build hint, `route-prompt.sh`, `check-done.sh`) ask a
-small local model quick yes/no and pick-one questions through `scripts/nimble.sh`. It is optional:
-without it every hook stays silent. The doctor (step 8b) checks the PC and installs the right one.
-If you set it up by hand as an agent, **check the PC first**, then pick:
+A System One model answers quick yes/no and pick-one questions so agents need not read long text:
+the hooks in `scripts/` (`gradle-agent.sh` build hint, `route-prompt.sh`, `check-done.sh`, all
+through `scripts/nimble.sh`) and the `nimble` skill (`nimble-ask`, `jgl`, `nimble-off`). All of
+it is optional: without a model every hook stays silent. It works the same for Claude Code and
+Gemini/Antigravity; only the automatic hooks are Claude Code only.
+
+The doctor (step 8b; `-DecisionModel` / `DECISION_MODEL=` for no prompt) checks the PC,
+**recommends**, and lets the user **choose**. If you set it up by hand as an agent, check the PC
+first, recommend, then ask the user:
 
 ```powershell
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader   # GPU and VRAM (Windows/Linux)
@@ -109,21 +114,41 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader   # GPU and VRAM 
 ollama --version                                                 # needs 0.35.0+ for Nimble
 ```
 
-| Hardware | Install | Why |
+| Hardware | Recommend | Local install |
 | --- | --- | --- |
-| GPU with ≥ 12 GB VRAM (Apple Silicon: ≥ 18 GB unified RAM) | **Nimble**: `ollama pull nimble` | Reads whole logs (~8K tokens); ~9 GB VRAM loaded; 56/60 tone, every log question right, 50–110 ms warm |
-| GPU with 4–12 GB VRAM, or no GPU but ≥ 16 GB RAM | **Laya** in `~/laya-env` (`pip install torch` + `pip install laya`), served on `127.0.0.1:8000` | ~1.3 GB, ~30 ms, but sees only the last 512 tokens; the doctor sets `NIMBLE_URL=http://127.0.0.1:8000`, `NIMBLE_MODEL=laya`, `NIMBLE_MAX_BYTES=1800` |
-| Less than that | Nothing | Hooks stay off |
+| GPU ≥ 12 GB VRAM (Apple Silicon ≥ 18 GB unified) | **Nimble + Jev** | `ollama pull nimble` (~9 GB VRAM loaded; reads ~6K tokens; 56/60 tone, every log question right, 50–110 ms warm) |
+| GPU 4–12 GB, or no GPU but ≥ 16 GB RAM | **Laya + Jev** | `~/laya-env` (`pip install torch` + `pip install laya`) on `127.0.0.1:8000`; ~1.3 GB, ~30 ms, last 512 tokens only; sets `NIMBLE_URL`/`NIMBLE_MODEL=laya`/`NIMBLE_MAX_BYTES=1800` |
+| Less than that | **Jev only** | none; sets `NIMBLE_LOCAL=0` |
 
-Nimble and a local ARTEMIS `qwen3-vl` model do not both fit under ~18 GB VRAM; Ollama swaps them,
-so the first hook after an ARTEMIS run is slower. Laya on CPU or Apple `mps` is untested.
-Turn every hook off with `NIMBLE_HOOKS=0`.
+**Jev is optional and paid** (TypeSafe, `api.typesafe.ai`, `jev-latest`, charged per input token,
+32K-token state). Rules, enforced in `scripts/nimble.sh`:
+
+- It is used only when a TypeSafe key is set (`JEV_API_KEY` or `~/.config/typesafe/api_key`, never
+  in the repo) **and** the text is longer than the local model's budget, or no local model answers.
+- The hooks never use it (`NIMBLE_ALLOW_JEV=0`); only `nimble-ask`, which an agent runs on purpose
+  for a very long file it would otherwise read whole. Cut the text first when a slice is enough.
+- Every Jev call is logged with its input tokens in `~/.config/typesafe/usage.log`.
+- The doctor asks for the key (Enter skips) and offers the TypeSafe skill
+  (`claude plugin install typesafe@typesafe-ai`; Gemini: `npx skills add typesafe-ai/skills --skill typesafe-ai`).
+
+**Search by meaning:** with Nimble or Laya, `~/.nimble/jgl` runs `jg` (`npm install -g
+@remotehost/jg`, needs ripgrep) with the local model judging snippets; nothing leaves the PC. On
+the repo it came from it put the right file in the top 3 for 9 of 10 questions (rg keyword search: 2 of 10),
+at ~9 s per query. Hosted `jg` (jevgrep.com login) is for PCs without a local model.
+
+**Free the GPU:** Ollama unloads the model 10 min after the last call (`NIMBLE_KEEP_ALIVE`).
+Claude Code also runs `tools/nimble-skill/nimble-off nimble` on session end (`.claude/settings.json`).
+Gemini/Antigravity has no hook: run `~/.nimble/nimble-off nimble` when the task is done. It
+unloads only the decision model; Ollama keeps serving other models and other machines.
+
+Nimble and a local ARTEMIS `qwen3-vl` model do not both fit under ~18 GB VRAM; Ollama swaps them.
+Laya on CPU or Apple `mps` is untested. Turn every hook off with `NIMBLE_HOOKS=0`.
 
 **Global skill: ask first.** After the model works, ask the user whether to install the `nimble`
-skill globally, so agents in *every* project can ask it about long logs instead of reading them.
-Only on a yes, copy `tools/nimble-skill/SKILL.md` to `~/.claude/skills/nimble/SKILL.md`, and
-`tools/nimble-skill/nimble-ask` plus `scripts/nimble.sh` to `~/.claude/nimble/` (the doctor offers
-the same). Check it with `echo hi | bash ~/.claude/nimble/nimble-ask yesno "Is this a greeting?"`.
+skill globally, so agents in *every* project (Claude Code and Gemini/Antigravity) can use it. Only
+on a yes, run `bash tools/nimble-skill/install-global.sh` (the doctor offers the same). It puts the
+commands in `~/.nimble/` and `SKILL.md` in `~/.claude/skills/nimble/` and `~/.gemini/skills/nimble/`.
+Check it with `echo hi | bash ~/.nimble/nimble-ask yesno "Is this a greeting?"`.
 
 ## Part 2 — GitHub bug → PR
 

@@ -15,6 +15,8 @@ base branch `{{BASE_BRANCH}}`. Values also live in `agent-kit.env`.
 - When done and checked, stop. Report in five lines or fewer, in ASD-STE100 Simplified Technical English.
 - Claude Code: medium effort for scoped edits; high for native or architecture work. A second
   agent only for a review the user asked for.
+- Long log or file and you need only a verdict: ask `~/.nimble/nimble-ask` first (skill `nimble`,
+  if installed). Unknown keyword: `~/.nimble/jgl`. When done, `~/.nimble/nimble-off nimble`.
 
 ## Rules — `.agents/rules/`
 

@@ -105,6 +105,7 @@ if [ -z "$msg" ] && [ -f "$REPO/scripts/nimble.sh" ]; then
     if printf '%s' "$last" | grep -Eiq '(fixed|done|resolved|works now|complete)'; then
       # shellcheck source=nimble.sh
       . "$REPO/scripts/nimble.sh"
+      NIMBLE_ALLOW_JEV=0   # hooks stay local and free
       q='{"rerun":{"type":"noul","instructions":"Is there a device re-run in the text?"}}'
       if resp=$(tail -c 60000 "$tpath" | nimble_ask 2 "$q") \
          && n=$(nimble_get "$resp" rerun noul) && ! nimble_ge "$n" 0.3; then
