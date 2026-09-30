@@ -35,6 +35,7 @@ One file at the repo root, read by every script and hook.
 
 ```
 APP_MODULE=:app        # Gradle module of the app
+APP_VARIANT=Debug      # build variant; DevDebug etc. when the app has flavors
 APPLICATION_ID=        # used by the device-test scripts
 BASE_BRANCH=development
 KTFMT_VERSION=         # blank = latest release
@@ -51,5 +52,3 @@ routing), `gradle-agent.sh` (failure hints), `check-done.sh` and `tools/nimble-s
 when present and do nothing when it is missing. `setup-env` picks by hardware: Nimble
 (`ollama pull nimble`, Ollama 0.35+, about 9 GB VRAM) or Laya (pip, smaller). Env vars:
 `NIMBLE_URL`, `NIMBLE_MODEL`, `NIMBLE_MAX_BYTES`.
-
-Originally extracted from CuspGrammarCMP.
