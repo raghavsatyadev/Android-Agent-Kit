@@ -37,7 +37,7 @@ done < <(cd "$KIT" && find . -type f \
 
 [ "$DRY" = 1 ] || chmod +x "$TARGET"/scripts/*.sh "$TARGET"/.githooks/* \
   "$TARGET"/global_skills/install.sh "$TARGET"/global_skills/*/install.sh \
-  "$TARGET"/global_skills/nimble/nimble-ask "$TARGET"/global_skills/nimble/nimble-on "$TARGET"/global_skills/nimble/nimble-off "$TARGET"/global_skills/nimble/jgl "$TARGET"/.agents/skills/android-device-test/scripts/*.sh 2>/dev/null || true
+  "$TARGET"/global_skills/local-model/lm-ask "$TARGET"/global_skills/local-model/lm-on "$TARGET"/global_skills/local-model/lm-off "$TARGET"/global_skills/local-model/jgl "$TARGET"/.agents/skills/android-device-test/scripts/*.sh 2>/dev/null || true
 
 echo; echo "Copied $copied, skipped $skipped$([ "$DRY" = 1 ] && echo ' (dry run)')."
 echo
