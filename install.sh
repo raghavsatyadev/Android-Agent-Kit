@@ -36,7 +36,8 @@ done < <(cd "$KIT" && find . -type f \
   ! -name '*.snippet' | sort)
 
 [ "$DRY" = 1 ] || chmod +x "$TARGET"/scripts/*.sh "$TARGET"/.githooks/* \
-  "$TARGET"/tools/nimble-skill/nimble-ask "$TARGET"/tools/nimble-skill/nimble-on "$TARGET"/.agents/skills/android-device-test/scripts/*.sh 2>/dev/null || true
+  "$TARGET"/global_skills/install.sh "$TARGET"/global_skills/*/install.sh \
+  "$TARGET"/global_skills/local-model/lm-ask "$TARGET"/global_skills/local-model/lm-on "$TARGET"/global_skills/local-model/lm-off "$TARGET"/global_skills/local-model/jgl "$TARGET"/.agents/skills/android-device-test/scripts/*.sh 2>/dev/null || true
 
 echo; echo "Copied $copied, skipped $skipped$([ "$DRY" = 1 ] && echo ' (dry run)')."
 echo
@@ -55,3 +56,4 @@ echo "Then by hand:"
 echo "  append gradle.properties.snippet to gradle.properties (org.gradle.caching=true)"
 echo "  append gitignore.snippet to .gitignore"
 echo "  git config core.hooksPath .githooks"
+echo "  bash global_skills/install.sh   (each developer, once: global skills such as nimble)"
