@@ -8,6 +8,7 @@
 //
 // Questions: .agents/diff-checks.txt in the repo, one per line, "<glob> | <question>" phrased so
 // that "yes" is the problem ("Does this change ... ?"). # starts a comment. No file -> exit 0.
+// "<glob> | !<message>" is a path rule: any change to a matching file is flagged, without the model.
 // Base: the argument, else BASE_BRANCH from agent-kit.env, else origin/HEAD, as origin/<branch>.
 // Output: one "<P(yes)> <file>: <question>" line per flag (yes >= LM_DIFFCHECK_MIN, default 0.7),
 // or "lm-diffcheck: no flags (N files, M checks)". A flag is a lead to look at, not a finding.
@@ -102,7 +103,10 @@ const t0 = Date.now();
 let bytes = 0, asked = 0;
 const flags = [];
 await pool(files, 3, async (f) => {
-  const qs = checks.filter((c) => c.re.test(f.name) || c.re.test(path.basename(f.name)));
+  const matching = checks.filter((c) => c.re.test(f.name) || c.re.test(path.basename(f.name)));
+  // "!" rules depend only on the path: any change to a matching file is flagged, no model.
+  for (const c of matching) if (c.q.startsWith("!")) flags.push({ p: 1, file: f.name, q: c.q.slice(1).trim() });
+  const qs = matching.filter((c) => !c.q.startsWith("!"));
   if (!qs.length) return;
   const questions = Object.fromEntries(qs.map((c, i) => [`q${i}`, { type: "noul", instructions: c.q }]));
   const text = `File: ${f.name}\nDiff (lines starting with + are added, - are removed):\n${f.hunks.slice(0, 12000)}`;
