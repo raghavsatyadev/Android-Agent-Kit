@@ -97,7 +97,9 @@ git diff | ~/.local-model/lm-diffcheck - # any diff
 
 Asks each changed file's diff the project's yes/no questions in `.agents/diff-checks.txt` (one per
 line, `<glob> | <question>`, phrased so that yes is the problem). Prints
-`<P(yes)> <file>: <question>` for every yes ≥ 0.7, or `no flags`. The base is `BASE_BRANCH` from
+`<P(yes)> <file>: <question>` for every yes ≥ 0.7, or `no flags`. A rule that depends only on the
+path (a module that must not change) is written `<glob> | !<message>`: any change there is
+flagged without asking the model, which is unreliable for such rules. The base is `BASE_BRANCH` from
 `agent-kit.env`, else `origin/HEAD`. In Claude Code the global UserPromptExpansion hook runs it
 when the user types `/code-review`, `/review`, `/security-review` or `/simplify`, and adds the
 flags to the prompt. A flag is a lead to check, not a finding. No checks file: it does nothing.
