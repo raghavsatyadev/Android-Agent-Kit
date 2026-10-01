@@ -12,7 +12,7 @@ compact Gradle output. Taken from a real Compose Multiplatform app and made app-
 | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` | one agent index (template) and two pointers |
 | `.agents/rules/` | android-build, format, branch-pr-policy, artemis-mobile-testing, parallel-agents |
 | `.agents/skills/` | fix-issue, android-device-test, artemis-key-rotation, compose-screenshot-test, cmp-best-practices, material3-expressive, workspace-cleanup, project-onboarding-setup |
-| `global_skills/` | skills for each developer's **global** folders (`nimble`); no agent reads this folder — `bash global_skills/install.sh` copies them to `~/.claude/skills`, `~/.gemini/skills`, `~/.agents/skills` |
+| `global_skills/` | skills for each developer's **global** folders (`local-model`); no agent reads this folder — `bash global_skills/install.sh` copies them to `~/.claude/skills`, `~/.gemini/skills`, `~/.agents/skills` |
 | `scripts/` | setup-env (.ps1/.sh), ci-local, gradle-agent, check-done, evidence-hash, hooks helpers |
 | `.githooks/` | pre-commit (ktfmt), pre-push (ci-local) |
 | `.claude/settings.json` | permissions and the prompt-routing and Stop hooks |
@@ -47,10 +47,10 @@ NDK_VERSION=           # blank = skip the NDK check
 `AGENTS.md` uses `{{PLACEHOLDER}}` markers; the docs use `<BASE_BRANCH>`, `<app>` and
 `<applicationId>` hints. Replace them with your values.
 
-## Optional: Nimble / Laya hooks
+## Optional: local decision model (Nimble, Tev1, Laya)
 
 A small local decision model reads long logs so the agent does not. `route-prompt.sh` (prompt
-routing), `gradle-agent.sh` (failure hints), `check-done.sh` and the global `nimble` skill (`global_skills/nimble/`) use it
+routing), `gradle-agent.sh` (failure hints), `check-done.sh` and the global `local-model` skill (`global_skills/local-model/`) use it
 when present and do nothing when it is missing. `setup-env` picks by hardware: Nimble
 (`ollama pull nimble`, Ollama 0.35+, about 9 GB VRAM) or Laya (pip, smaller). Env vars:
-`NIMBLE_URL`, `NIMBLE_MODEL`, `NIMBLE_MAX_BYTES`.
+`LOCAL_MODEL_URL`, `LOCAL_MODEL_NAME`, `LOCAL_MODEL_MAX_BYTES`.
