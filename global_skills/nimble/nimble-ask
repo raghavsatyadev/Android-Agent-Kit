@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ask the local decision model (Nimble or Laya), or Jev when the text is too long for it, one
+# Ask the local decision model (Nimble, Tev1 or Laya), or Jev when the text is too long for it, one
 # question about text on stdin.
 #
 #   nimble-ask yesno  "<question>"                       < file   -> "yes 0.97 local"
