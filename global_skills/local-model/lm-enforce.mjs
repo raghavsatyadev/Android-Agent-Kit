@@ -10,14 +10,18 @@
 //       wc, rg -c, head/tail within the limit) or stdout goes to a file (`> tmp/x.log`).
 //     - Read of a log with no `limit` or one over the line limit; Grep content mode on a log
 //       with no head_limit within the line limit.
+//     The body of `bash -c "..."`, `sh -c`, `powershell -Command "..."` (Get-Content, Select-String),
+//     $(...) and backticks is checked the same way, two levels deep.
 //     A log is a path matching LOCAL_MODEL_ENFORCE_LOGS (default: *.log, *.trace, tmp/gradle-agent-*,
 //     tombstones, hs_err_pid*, *crash*.txt, anr*.txt, logcat*.txt, bugreport*.txt).
 //     Nothing is denied when neither the local model nor a Jev key could answer lm-ask.
 //   PostToolUse  Bash|Grep|Edit|Write|MultiEdit|NotebookEdit   adds a note to the agent's context:
 //     - a Bash output over LOCAL_MODEL_ENFORCE_KB (default 4) KB that was not an lm-*/jgl call or a
 //       build lm-gate already shortens -> "that was N KB; pipe it to lm-ask next time".
-//     - LOCAL_MODEL_ENFORCE_SEARCHES (default 3) rg/grep/Grep searches in a row with no jgl or
-//       lm-rank (a file edit also resets the count) -> "use jgl / lm-rank".
+//     - LOCAL_MODEL_ENFORCE_SEARCHES (default 3) code searches in a row with no jgl or lm-rank (a
+//       file edit also resets the count) -> "use jgl / lm-rank". A code search is rg/grep over a
+//       folder, a glob or the working folder as the first pipeline stage, or the Grep tool on a
+//       folder outside count mode; `cmd | grep x` and a look inside a named file do not count.
 //
 // Hooks also run inside subagents, so this covers them. Off: LOCAL_MODEL_HOOKS=0 or
 // LOCAL_MODEL_ENFORCE=0 in the environment, or LM_ENFORCE=0 in one command.
@@ -117,8 +121,52 @@ const SEP = new Set([";", "&&", "||", "&", "\n", "(", ")"]);
 const PREFIX = new Set(["sudo", "time", "env", "command", "exec", "nice", "nohup", "timeout"]);
 const base = (p) => path.basename(String(p).replace(/\\/g, "/")).replace(/\.(exe|cmd|bat)$/i, "");
 
-// -> [[stage, ...], ...]: statements, each a pipeline of { cmd, args, out, in }
-function parse(command) {
+// $(...) and `...` -> placeholder words; returns [text, [inner strings]]. Not inside '...'.
+function subs(s) {
+  const inner = [];
+  let out = "";
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (q === "'") {
+      if (ch === "'") q = null;
+      out += ch;
+      continue;
+    }
+    if (ch === "\\" && i + 1 < s.length) {
+      out += ch + s[++i];
+      continue;
+    }
+    if (ch === "'" && !q) q = "'";
+    else if (ch === '"') q = q ? null : '"';
+    let end = -1;
+    if (ch === "$" && s[i + 1] === "(") {
+      let depth = 0;
+      for (let j = i + 1; j < s.length; j++) {
+        if (s[j] === "(") depth++;
+        else if (s[j] === ")" && --depth === 0) {
+          end = j;
+          break;
+        }
+      }
+      if (end > 0) inner.push(s.slice(i + 2, end));
+    } else if (ch === "`") {
+      end = s.indexOf("`", i + 1);
+      if (end > 0) inner.push(s.slice(i + 1, end));
+    }
+    if (end > 0) {
+      out += ` __LMSUB${inner.length - 1}__ `;
+      i = end;
+    } else out += ch;
+  }
+  return [out, inner];
+}
+
+// -> [[stage, ...], ...]: statements, each a pipeline of { cmd, args, out, in, inner }.
+// `inner` holds the pipelines of a `bash -c "..."` / `powershell -Command "..."` body or of a
+// $(...) / `...` inside the stage, parsed the same way down to depth 2.
+function parse(command, depth = 0) {
+  const [text, inner] = depth < 2 ? subs(command) : [command, []];
   const pipelines = [];
   let pipe = [];
   let cur = { words: [], redirs: [] };
@@ -126,7 +174,7 @@ function parse(command) {
     if (cur.words.length || cur.redirs.length) pipe.push(cur);
     cur = { words: [], redirs: [] };
   };
-  const toks = lex(command);
+  const toks = lex(text);
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i];
     if (t.w !== undefined) cur.words.push(t.w);
@@ -146,16 +194,25 @@ function parse(command) {
   if (pipe.length) pipelines.push(pipe);
   return pipelines.map((p) =>
     p.map(({ words, redirs }) => {
+      const nested = [];
+      for (const w of words)
+        for (const m of w.matchAll(/__LMSUB(\d+)__/g))
+          if (inner[m[1]] !== undefined) nested.push(...parse(inner[m[1]], depth + 1)); // else the outer level's
       let k = 0;
       while (k < words.length && (/^\w+=/.test(words[k]) || PREFIX.has(words[k]))) k++;
-      let cmd = base(words[k] ?? "");
-      if ((cmd === "bash" || cmd === "sh") && words[k + 1] && !words[k + 1].startsWith("-")) cmd = base(words[++k]);
+      let cmd = base(words[k] ?? "").toLowerCase();
+      if (/^(bash|sh|zsh|powershell|pwsh)$/.test(cmd) && depth < 2) {
+        const c = words.findIndex((x, j) => j > k && /^-(c|command)$/i.test(x));
+        if (c > 0 && words[c + 1] !== undefined) nested.push(...parse(words.slice(c + 1).join(" "), depth + 1));
+        else if (words[k + 1] && !words[k + 1].startsWith("-")) cmd = base(words[++k]).toLowerCase();
+      }
       if (cmd === "git" && words[k + 1] === "grep") cmd = "git-grep", k++;
       return {
         cmd,
         args: words.slice(k + 1),
         out: redirs.some((r) => /^(1?>>?|&>>?)$/.test(r.op)), // stdout to a file
         in: redirs.filter((r) => r.op === "<").map((r) => r.target),
+        inner: nested,
       };
     }),
   );
@@ -258,12 +315,25 @@ function dump(st) {
     const g = grepInfo(st);
     return g.files.some(isLog) && !g.small ? "search" : null;
   }
+  // PowerShell, reached through `powershell -Command "..."`
+  if (cmd === "get-content" || cmd === "gc") {
+    if (!files().some(isLog)) return null;
+    const n = args.findIndex((x) => /^-(tail|totalcount|head|first|last)$/i.test(x));
+    const small = n >= 0 && num(args[n + 1] ?? "") <= LINES && !args.some((x) => /^-wait$/i.test(x));
+    return small ? null : "read";
+  }
+  if (cmd === "select-string" || cmd === "sls")
+    return files().some(isLog) && !args.some((x) => /^-(quiet|list)$/i.test(x)) ? "search" : null;
   return null;
 }
 
 // a later stage that cuts the output down to a verdict, a count or a few lines
 function cuts(st) {
-  if (["lm-ask", "lm-rank", "wc", "jgl"].includes(st.cmd)) return true;
+  if (["lm-ask", "lm-rank", "wc", "jgl", "measure-object"].includes(st.cmd)) return true;
+  if (st.cmd === "select-object") {
+    const n = st.args.findIndex((x) => /^-(first|last)$/i.test(x));
+    return n >= 0 && num(st.args[n + 1] ?? "") <= LINES;
+  }
   if (st.cmd === "head" || st.cmd === "tail") return headTailLines(st) <= LINES;
   if (GREPS.has(st.cmd)) return grepInfo(st).small;
   return st.out;
@@ -285,6 +355,22 @@ const FIX = {
     `print a few (\`rg -m 20 PATTERN FILE\`, or pipe to \`head -n ${LINES}\`), or ask the local model: ` +
     `\`${LM} choice "<question>" a="..." other="other" < FILE\`.`,
 };
+
+// first dump that nothing after it cuts down; a wrapper or $(...) body counts unless its own
+// stage or a later one cuts it (`bash -c "cat a.log" | head -5`, `lm-ask q <<< "$(cat a.log)"`)
+function findDump(pipelines) {
+  for (const pipe of pipelines)
+    for (let i = 0; i < pipe.length; i++) {
+      if (pipe.slice(i).some(cuts)) continue;
+      if (pipe[i].inner.length) {
+        const hit = findDump(pipe[i].inner);
+        if (hit) return hit;
+      }
+      const kind = dump(pipe[i]);
+      if (kind) return { kind, st: pipe[i] };
+    }
+  return null;
+}
 
 // lm-ask can answer: Ollama reachable, or a Jev key set
 async function canAsk() {
@@ -318,14 +404,8 @@ const short = (s) => (s.length > 100 ? s.slice(0, 97) + "..." : s);
 if (event === "PreToolUse") {
   if (tool === "Bash") {
     if (!command || /\bLM_ENFORCE=0\b/.test(command)) process.exit(0);
-    for (const pipe of parse(command)) {
-      const at = pipe.findIndex(dump);
-      if (at < 0) continue;
-      if (pipe.slice(at).some(cuts)) continue;
-      const kind = dump(pipe[at]);
-      const ex = [pipe[at].cmd, ...pipe[at].args].join(" ");
-      await deny(kind, command, FIX[kind](short(ex)));
-    }
+    const hit = findDump(parse(command));
+    if (hit) await deny(hit.kind, command, FIX[hit.kind](short([hit.st.cmd, ...hit.st.args].join(" "))));
   } else if (tool === "Read" && isLog(ti.file_path)) {
     if (ti.limit && ti.limit <= LINES) process.exit(0);
     await deny(
@@ -377,13 +457,32 @@ if (EDIT_TOOLS.has(tool)) {
   process.exit(0);
 }
 
+// A search for code: rg/grep over a folder, a glob or the working folder, as the first pipeline
+// stage. Not `cmd | grep x` (a filter) and not a look inside files named explicitly.
+const cwd = input.cwd || process.cwd();
+const isDir = (p) => {
+  try {
+    return fs.statSync(path.resolve(cwd, p)).isDirectory();
+  } catch {
+    return false;
+  }
+};
+function codeSearch(st) {
+  if (!st || !GREPS.has(st.cmd)) return false;
+  const { files } = grepInfo(st);
+  if (files.length) return files.some((f) => isDir(f) || /[*?[]/.test(f));
+  const plainGrep = ["grep", "egrep", "fgrep", "zgrep"].includes(st.cmd);
+  return !plainGrep || st.args.some((x) => x === "--recursive" || /^-[a-zA-Z]*[rR]/.test(x));
+}
+
 const notes = [];
-let searched = tool === "Grep";
+let searched = tool === "Grep" && ti.output_mode !== "count" && (!ti.path || isDir(ti.path));
 if (tool === "Bash" && command && !/\bLM_ENFORCE=0\b/.test(command)) {
-  const stages = parse(command).flat();
+  const pipelines = parse(command);
+  const stages = pipelines.flat();
   const helper = stages.some((st) => /^(lm-|jgl$|jg$)/.test(st.cmd));
   if (stages.some((st) => ["jgl", "jg", "lm-rank"].includes(st.cmd))) state.searches = 0;
-  else if (stages.some((st) => GREPS.has(st.cmd))) searched = true;
+  else if (pipelines.some((p) => codeSearch(p[0]))) searched = true;
 
   const r = input.tool_response;
   let bytes =

@@ -114,12 +114,15 @@ flags to the prompt. A flag is a lead to check, not a finding. No checks file: i
 - **Enforce** (`lm-enforce.mjs`). Denies a log dump before it runs: `adb logcat -d` (no `-t N`),
   `cat`/`less` on a log, `head`/`tail` over 30 lines, `tail -f`, `sed` over a log, `rg`/`grep` on a
   log without `-c`/`-l`/`-q`/`-m N`, a Read of a log without a small `limit`, a Grep content search
-  of a log without a small `head_limit`. A pipe into `lm-ask`, `lm-rank`, `wc`, `rg -c` or
+  of a log without a small `head_limit`. The body of `bash -c`, `powershell -Command`, `$(...)` and
+  backticks is checked too. A pipe into `lm-ask`, `lm-rank`, `wc`, `rg -c` or
   `head -n 30`, or `> file`, makes it fine. A log is `*.log`, `*.trace`, `tmp/gradle-agent-*`,
   tombstones, `hs_err_pid*`, `*crash*.txt`, `anr*.txt`, `logcat*.txt`, `bugreport*.txt`. Nothing is
   denied when neither the local model nor Jev could answer. After the call it adds a note when a
-  Bash output was over 4 KB (not `lm-*`, `jgl` or a build lm-gate shortens), and after 3 text
-  searches in a row with no `jgl` or `lm-rank` (an edit resets the count). When you see
+  Bash output was over 4 KB (not `lm-*`, `jgl` or a build lm-gate shortens), and after 3 code
+  searches in a row with no `jgl` or `lm-rank` (an edit resets the count). A code search is
+  `rg`/`grep` over a folder, a glob or the working folder, or Grep on a folder; `cmd | grep x` and a
+  look inside a named file do not count. Self-test: `node test/lm-enforce.test.mjs`. When you see
   `[lm-enforce]`: do what it names (save to a file, `lm-ask`, or narrow with `rg -c` / `rg -m 20`).
 - **Request size hint** (`lm-route.mjs`). The model sizes each prompt; only a sure answer (≥ 0.9)
   adds a line. Quick request → answer directly, no subagents. Multi-step → search-only subagents
