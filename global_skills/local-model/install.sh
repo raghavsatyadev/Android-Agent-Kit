@@ -3,9 +3,9 @@
 #   ~/.local-model/                local-model.sh, lm-ask, lm-on, lm-off, jgl, lm-rank, lm-diffcheck and
 #                                  the Node hooks (lm-client, lm-gate, lm-loop, lm-enforce, lm-route, ...)
 #   ~/.claude/settings.json        Claude Code hooks: SessionStart lm-on, SessionEnd lm-off,
-#                                  PostToolUse lm-gate (long build/test output), Pre/PostToolUse(Failure)
+#                                  PostToolUse lm-gate (long Bash output compressed, build/test verdict), Pre/PostToolUse(Failure)
 #                                  lm-loop (repeated failures), Pre/PostToolUse lm-enforce (log dumps
-#                                  denied, big-output and search notes), UserPromptSubmit lm-route (request
+#                                  denied, search notes), UserPromptSubmit lm-route (request
 #                                  size hint), UserPromptExpansion lm-diffcheck (before /code-review)
 #   ~/.local-model/mod/            Claude Code mods, as the `local-model` plugin marketplace:
 #                                  lm-savings (/lm-savings sums usage.log). Needs Claude Code 2.1.287+.
@@ -55,7 +55,10 @@ JS
 rm -rf "$bin/mod" && cp -r "$here/mod" "$bin/mod"
 if command -v claude >/dev/null 2>&1; then
   mp="$bin/mod"; command -v cygpath >/dev/null 2>&1 && mp="$(cygpath -w "$mp")"
-  claude plugin marketplace add "$mp" >/dev/null 2>&1 || claude plugin marketplace update local-model >/dev/null 2>&1 || true
-  claude plugin install lm-savings@local-model >/dev/null 2>&1 || claude plugin update lm-savings@local-model >/dev/null 2>&1 || true
+  # add and install succeed on a re-run without picking up a new version, so update both every time.
+  claude plugin marketplace add "$mp" >/dev/null 2>&1 || true
+  claude plugin marketplace update local-model >/dev/null 2>&1 || true
+  claude plugin install lm-savings@local-model >/dev/null 2>&1 || true
+  claude plugin update lm-savings@local-model >/dev/null 2>&1 || true
 fi
 echo "Installed: $bin, hooks in ~/.claude/settings.json, mods from $bin/mod"

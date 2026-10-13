@@ -16,8 +16,6 @@
 //     tombstones, hs_err_pid*, *crash*.txt, anr*.txt, logcat*.txt, bugreport*.txt).
 //     Nothing is denied when neither the local model nor a Jev key could answer lm-ask.
 //   PostToolUse  Bash|Grep|Edit|Write|MultiEdit|NotebookEdit   adds a note to the agent's context:
-//     - a Bash output over LOCAL_MODEL_ENFORCE_KB (default 4) KB that was not an lm-*/jgl call or a
-//       build lm-gate already shortens -> "that was N KB; pipe it to lm-ask next time".
 //     - LOCAL_MODEL_ENFORCE_SEARCHES (default 3) code searches in a row with no jgl or lm-rank (a
 //       file edit also resets the count) -> "use jgl / lm-rank". A code search is rg/grep over a
 //       folder, a glob or the working folder as the first pipeline stage, or the Grep tool on a
@@ -34,16 +32,12 @@ import { usage } from "./lm-client.mjs";
 const env = process.env;
 if (env.LOCAL_MODEL_HOOKS === "0" || env.LOCAL_MODEL_ENFORCE === "0") process.exit(0);
 const LINES = Number(env.LOCAL_MODEL_ENFORCE_LINES || 30);
-const KB = Number(env.LOCAL_MODEL_ENFORCE_KB || 4);
 const SEARCHES = Number(env.LOCAL_MODEL_ENFORCE_SEARCHES || 3);
 const LOG_RE = new RegExp(
   env.LOCAL_MODEL_ENFORCE_LOGS ||
     String.raw`(\.log(\.\d+)?|\.trace)$|(^|/)tmp/gradle-agent-[^/]*$|(^|/)(tombstone[^/]*|hs_err_pid[^/]*|[^/]*crash[^/]*\.txt|anr[^/]*\.txt|logcat[^/]*\.txt|bugreport[^/]*\.txt)$`,
   "i",
 );
-// Same as lm-gate.mjs: build and test runs, whose long output lm-gate already shortens.
-const VERDICT_CMD =
-  /(^|[\s;&|(\/])(gradlew(\.bat)?|gradle|gradle-agent\.sh|ci-local\.sh|mvnw?|make|ctest|pytest|tox|mypy|ruff|tsc|eslint|jest|vitest)(\s|$)|\b(npm|pnpm|yarn|bun) (test|run|ci|install|build)\b|\bcargo (build|test|check|clippy)\b|\bgo (build|test|vet)\b|\bdotnet (build|test)\b|\bflutter (build|test)\b|\bmaestro test\b|\bam instrument\b/;
 const LM = "~/.local-model/lm-ask";
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
@@ -480,29 +474,9 @@ let searched = tool === "Grep" && ti.output_mode !== "count" && (!ti.path || isD
 if (tool === "Bash" && command && !/\bLM_ENFORCE=0\b/.test(command)) {
   const pipelines = parse(command);
   const stages = pipelines.flat();
-  const helper = stages.some((st) => /^(lm-|jgl$|jg$)/.test(st.cmd));
   if (stages.some((st) => ["jgl", "jg", "lm-rank"].includes(st.cmd))) state.searches = 0;
   else if (pipelines.some((p) => codeSearch(p[0]))) searched = true;
-
-  const r = input.tool_response;
-  let bytes =
-    typeof r === "string" ? Buffer.byteLength(r) : r && typeof r === "object"
-      ? Buffer.byteLength(String(r.stdout ?? "")) + Buffer.byteLength(String(r.stderr ?? ""))
-      : 0;
-  if (r?.persistedOutputPath) {
-    try {
-      bytes = fs.statSync(r.persistedOutputPath).size;
-    } catch {}
-  }
-  if (!helper && !VERDICT_CMD.test(command) && bytes > KB * 1024) {
-    const kb = Math.round(bytes / 1024);
-    notes.push(
-      `[lm-enforce] That output was ${kb} KB. If you only needed a verdict or a pick from it (did it pass, ` +
-        `which one, root cause), save it to a file and ask: \`${LM} yesno|choice "<question>" ... < tmp/out.txt\`. ` +
-        `If you needed specific lines, narrow the command (rg -c, rg -m 20, head -n ${LINES}).`,
-    );
-    await usage("lm-enforce", 0, bytes, `nudged ${kb}KB`, command);
-  }
+  // Big output is no longer nudged here: lm-gate.mjs compresses it before the agent reads it.
 }
 if (searched) {
   state.searches = (state.searches || 0) + 1;

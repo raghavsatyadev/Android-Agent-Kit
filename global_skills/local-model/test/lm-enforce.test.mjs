@@ -101,11 +101,9 @@ check(pre("Grep", { pattern: "E", path: "tmp/ci.log", output_mode: "content" }),
 check(!pre("Grep", { pattern: "E", path: "tmp/ci.log", output_mode: "count" }), "Grep log count: allow");
 check(!pre("Grep", { pattern: "E", path: "tmp/ci.log", output_mode: "content", head_limit: 20 }), "Grep log head_limit 20: allow");
 
-// big-output note
+// big output: no note any more (lm-gate compresses it)
 const big = { stdout: "x".repeat(6000) };
-check(post("Bash", { command: "git diff" }, big).includes("6 KB"), "6 KB output: note");
-check(!post("Bash", { command: "./gradlew test" }, big).includes("KB"), "gradlew output: no note (lm-gate's)");
-check(!post("Bash", { command: "~/.local-model/jgl q" }, big).includes("KB"), "jgl output: no note");
+check(!post("Bash", { command: "git diff" }, big).includes("KB"), "6 KB output: no note");
 
 // search counter: only code searches count
 const SEARCH = "text searches";
