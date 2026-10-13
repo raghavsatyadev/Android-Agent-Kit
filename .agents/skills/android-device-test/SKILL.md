@@ -21,6 +21,25 @@ tap (`'Text Input Field'`), and end with what to report. This is required when A
 local Ollama model (it loops on vague "find the X tab" goals) and makes Gemini runs faster too.
 Check which model a run used in its `stdout.log` (`ollama/…` vs `gemini-…`).
 
+## Maestro replays (in-app flows)
+
+Record proven in-app flows as Maestro YAML in [flows/](flows/) (start from
+[flows/tabs.yaml](flows/tabs.yaml)). Replays need no model calls from ARTEMIS and take about a
+minute, so run them before and after a change:
+
+```bash
+~/.maestro/maestro/bin/maestro --device <serial> test .agents/skills/android-device-test/flows
+```
+
+| Flow | Checks |
+| --- | --- |
+| `tabs.yaml` | every tab opens and shows its landmark |
+
+**Maestro cannot test accessibility overlays.** While a Maestro run is active, Android unbinds the
+app's accessibility service (it reconnects when Maestro exits), so overlay and other-app flows stay
+on ARTEMIS. If the app has such a service, keep `launchApp: {stopApp: false}` in every flow: a
+force-stop removes the service from the enabled list. Set `MAESTRO_CLI_NO_ANALYTICS=1`.
+
 ## ADB & dev.sh (supplementary)
 
 `D=.agents/skills/android-device-test/scripts/dev.sh` · package = `APPLICATION_ID` in `agent-kit.env`

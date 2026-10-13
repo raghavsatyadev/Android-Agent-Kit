@@ -1,0 +1,11 @@
+# Visit every tab and check one landmark on each. Icon-only tabs are matched by their content
+# descriptions. Run: maestro test .agents/skills/android-device-test/flows/tabs.yaml
+appId: <applicationId>
+name: Tabs
+---
+- launchApp:
+    stopApp: false  # a force-stop removes an accessibility service from the enabled list
+- tapOn: "<Tab 1>"
+- assertVisible: "<Landmark on tab 1>"
+- tapOn: "<Tab 2>"
+- assertVisible: "<Landmark on tab 2>"

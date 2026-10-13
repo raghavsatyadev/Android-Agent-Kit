@@ -17,6 +17,17 @@ compact Gradle output. Taken from a real Compose Multiplatform app and made app-
 | `.githooks/` | pre-commit (ktfmt), pre-push (ci-local) |
 | `.claude/settings.json` | permissions and the prompt-routing and Stop hooks |
 | `.maestro/` | empty; see its README to record replayable flows (Maestro 2.x) |
+| `.agents/skills/android-device-test/flows/` | `tabs.yaml` template: replays every tab and checks its landmark |
+
+## Used in
+
+The kit grew out of three apps and is kept in sync with them:
+
+| App | Stack | What it added |
+| --- | --- | --- |
+| [SimpleCricketUmpireScorer](https://github.com/raghavsatyadev/SimpleCricketUmpireScorer/tree/migration-cmp) | Compose Multiplatform | Material 3 Expressive motion (container transforms, celebrations), screenshot tests |
+| BulkYoutubeSearch | Jetpack Compose | Compose migration and M3E screens |
+| Cusp (grammar fixer app) | Compose Multiplatform | ARTEMIS device testing, Maestro flows, local decision model |
 
 ## Install
 
