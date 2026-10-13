@@ -29,6 +29,14 @@ The kit grew out of three apps and is kept in sync with them:
 | BulkYoutubeSearch | Jetpack Compose | Compose migration and M3E screens |
 | Cusp (grammar fixer app) | Compose Multiplatform | ARTEMIS device testing, Maestro flows, local decision model |
 
+## Screenshots
+
+What the apps above look like with the kit's [material3-expressive](.agents/skills/material3-expressive/SKILL.md) skill applied:
+
+| SCUS: match result | SCUS: match list | BYS: found songs | BYS: sort | Cusp: insights |
+| --- | --- | --- | --- | --- |
+| ![SCUS result](docs/screenshots/scus-result.png) | ![SCUS list](docs/screenshots/scus-list.png) | ![BYS found songs](docs/screenshots/bys-found-songs.png) | ![BYS sort menu](docs/screenshots/bys-sort.png) | ![Cusp insights](docs/screenshots/cusp-insights.png) |
+
 ## Install
 
 ```bash
