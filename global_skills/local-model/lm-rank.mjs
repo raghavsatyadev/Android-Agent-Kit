@@ -3,7 +3,7 @@
 // only the best few are printed.
 //
 //   rg -n "Prompt" app/src | lm-rank "where is the tone prompt built"      # rg -n output on stdin
-//   lm-rank "which note covers the jlink failure" .remember/*.md memory/reports/*.md   # whole files
+//   lm-rank "which note covers the jlink failure" .claude/HISTORY.md memory/reports/*.md   # whole files
 //   options: --top N (default 3), --all (print every score)
 //
 // Per file the model reads the hit lines with 4 lines around each, at most ~3 KB; a whole file is

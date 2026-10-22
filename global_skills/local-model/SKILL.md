@@ -91,7 +91,7 @@ with `LOCAL_MODEL_GATE=0`. Quote the real result line it shows when you report a
 
 ```bash
 rg -n "Prompt" app/src | ~/.local-model/lm-rank "where is the tone prompt built"     # top 3 files
-~/.local-model/lm-rank "which note covers the jlink failure" .remember/*.md memory/*.md   # whole files
+~/.local-model/lm-rank "which note covers the jlink failure" .claude/HISTORY.md memory/*.md   # whole files
 ```
 
 Prints `<P(relevant)> <path> (<hits> hits)` for the best 3 (`--top N`, `--all`). For each file the
